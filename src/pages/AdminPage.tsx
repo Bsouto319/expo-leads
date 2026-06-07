@@ -7,7 +7,7 @@ const BASE_URL = window.location.origin
 
 const EMPTY = {
   slug: '', nome_evento: '', nome_expositor: '', cor_primaria: '#6366f1',
-  whatsapp_expositor: '', data_evento: '', local_evento: '', webhook_url: '',
+  whatsapp_expositor: '', data_evento: '', local_evento: '', uazapi_token: '',
   mensagem_auto: 'Olá {{nome}}! 👋 Foi ótimo te conhecer na {{evento}}. Em breve entramos em contato com mais informações. Qualquer dúvida é só chamar!'
 }
 
@@ -122,11 +122,11 @@ export default function AdminPage() {
           </div>
 
           <div>
-            <label className="text-[11px] font-bold text-white/40 block mb-1">Webhook WhatsApp (n8n) <span className="font-normal text-white/20">opcional</span></label>
-            <input value={form.webhook_url} onChange={e => set('webhook_url', e.target.value)}
-              placeholder="https://n8n.btechsouto.shop/webhook/expo-leads"
+            <label className="text-[11px] font-bold text-white/40 block mb-1">Token UAZAPI <span className="font-normal text-white/20">opcional — disparo WhatsApp automático</span></label>
+            <input value={form.uazapi_token} onChange={e => set('uazapi_token', e.target.value)}
+              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
               className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-violet-500 font-mono" />
-            <p className="text-[10px] text-white/25 mt-1">Quando preenchido, dispara mensagem WhatsApp automática a cada novo lead.</p>
+            <p className="text-[10px] text-white/25 mt-1">Token da instância do cliente na UAZAPI. Se preenchido, envia WhatsApp ao lead automaticamente.</p>
           </div>
 
           <div>

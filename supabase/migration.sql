@@ -12,7 +12,7 @@ create table if not exists el_eventos (
   local_evento     text,
   mensagem_auto    text,
   logo_url         text,
-  webhook_url      text,   -- URL do n8n para disparo automático de WhatsApp
+  uazapi_token     text,   -- token da instância UAZAPI do cliente para disparo automático
   ativo            boolean default true,
   created_at       timestamptz default now()
 );

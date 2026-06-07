@@ -20,29 +20,12 @@ export async function submitLead(evento: any, form: {
     .single()
   if (error) throw error
 
-  // Disparo WhatsApp via webhook do n8n (fire-and-forget)
-  if (evento.webhook_url) {
-    const vars: Record<string, string> = {
-      nome:   form.nome,
-      evento: evento.nome_evento,
-    }
-    const mensagem = (evento.mensagem_auto || '').replace(
-      /\{\{(\w+)\}\}/g,
-      (_, k) => vars[k] ?? ''
-    )
-    fetch(evento.webhook_url, {
+  // Dispara WhatsApp via endpoint Vercel → UAZAPI (fire-and-forget)
+  if (evento.uazapi_token) {
+    fetch('/api/notify', {
       method: 'POST',
-      mode: 'no-cors',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        lead: { id: data.id, ...form },
-        mensagem,
-        evento: {
-          id: evento.id,
-          nome: evento.nome_evento,
-          nome_expositor: evento.nome_expositor,
-        },
-      }),
+      body: JSON.stringify({ lead: { id: data.id, ...form }, evento }),
     }).catch(() => {})
   }
 
@@ -77,7 +60,7 @@ export async function createEvento(ev: {
   slug: string; nome_evento: string; nome_expositor: string;
   cor_primaria?: string; whatsapp_expositor?: string;
   data_evento?: string; local_evento?: string;
-  mensagem_auto?: string; logo_url?: string; webhook_url?: string
+  mensagem_auto?: string; logo_url?: string; uazapi_token?: string
 }) {
   const { data, error } = await supabase.from('el_eventos').insert(ev).select('*').single()
   if (error) throw error
@@ -87,7 +70,7 @@ export async function createEvento(ev: {
 export async function updateEvento(id: string, patch: Partial<{
   nome_evento: string; nome_expositor: string; cor_primaria: string;
   whatsapp_expositor: string; data_evento: string; local_evento: string;
-  mensagem_auto: string; logo_url: string; webhook_url: string; ativo: boolean
+  mensagem_auto: string; logo_url: string; uazapi_token: string; ativo: boolean
 }>) {
   await supabase.from('el_eventos').update(patch).eq('id', id)
 }
