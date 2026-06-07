@@ -2,12 +2,15 @@ import { useEffect, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { getEventos, createEvento, updateEvento } from '../lib/api'
 import { Plus, QrCode, Users, Check, ExternalLink, Copy, ToggleLeft, ToggleRight } from 'lucide-react'
+import PasswordGate from '../components/PasswordGate'
+
+const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD as string
 
 const BASE_URL = window.location.origin
 
 const EMPTY = {
   slug: '', nome_evento: '', nome_expositor: '', cor_primaria: '#6366f1',
-  whatsapp_expositor: '', data_evento: '', local_evento: '', uazapi_token: '',
+  whatsapp_expositor: '', data_evento: '', local_evento: '', uazapi_token: '', crm_senha: '',
   mensagem_auto: 'Olá {{nome}}! 👋 Foi ótimo te conhecer na {{evento}}. Em breve entramos em contato com mais informações. Qualquer dúvida é só chamar!'
 }
 
@@ -59,6 +62,7 @@ export default function AdminPage() {
   }
 
   return (
+    <PasswordGate storageKey="admin-auth" correctPassword={ADMIN_PASSWORD} title="ExpoLeads Admin">
     <div className="min-h-svh bg-gray-950 text-white">
       {/* Header */}
       <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between">
@@ -121,12 +125,21 @@ export default function AdminPage() {
               placeholder="Ex: Centro de Convenções — Brasília, DF" className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-violet-500" />
           </div>
 
-          <div>
-            <label className="text-[11px] font-bold text-white/40 block mb-1">Token UAZAPI <span className="font-normal text-white/20">opcional — disparo WhatsApp automático</span></label>
-            <input value={form.uazapi_token} onChange={e => set('uazapi_token', e.target.value)}
-              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-              className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-violet-500 font-mono" />
-            <p className="text-[10px] text-white/25 mt-1">Token da instância do cliente na UAZAPI. Se preenchido, envia WhatsApp ao lead automaticamente.</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-bold text-white/40 block mb-1">Senha do CRM <span className="font-normal text-white/20">opcional</span></label>
+              <input value={form.crm_senha} onChange={e => set('crm_senha', e.target.value)}
+                placeholder="Ex: cliente@2026"
+                className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-violet-500" />
+              <p className="text-[10px] text-white/25 mt-1">Vazia = usa senha padrão do admin.</p>
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-white/40 block mb-1">Token UAZAPI <span className="font-normal text-white/20">opcional</span></label>
+              <input value={form.uazapi_token} onChange={e => set('uazapi_token', e.target.value)}
+                placeholder="uuid do cliente"
+                className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-violet-500 font-mono" />
+              <p className="text-[10px] text-white/25 mt-1">Instância UAZAPI do cliente.</p>
+            </div>
           </div>
 
           <div>
@@ -211,5 +224,6 @@ export default function AdminPage() {
         ))}
       </div>
     </div>
+    </PasswordGate>
   )
 }

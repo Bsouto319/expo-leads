@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { getEvento, getLeads, updateLeadStatus } from '../lib/api'
 import { Users, RefreshCw, Phone, Mail, Building2, MessageSquare, Clock, CheckCircle, XCircle, Star } from 'lucide-react'
+import PasswordGate from '../components/PasswordGate'
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
   novo:        { label: 'Novo',        color: '#6366f1', bg: '#6366f120' },
@@ -75,7 +76,10 @@ export default function CrmPage() {
     <div className="min-h-svh flex items-center justify-center text-gray-400">Evento não encontrado.</div>
   )
 
+  const crmSenha = evento.crm_senha || import.meta.env.VITE_ADMIN_PASSWORD
+
   return (
+    <PasswordGate storageKey={`crm-${slug}`} correctPassword={crmSenha} title={`CRM — ${evento.nome_expositor}`}>
     <div className="min-h-svh flex flex-col bg-gray-50">
       {/* Header */}
       <div className="px-4 py-4 flex items-center justify-between shadow-sm" style={{ background: cor }}>
@@ -216,5 +220,6 @@ export default function CrmPage() {
         </div>
       )}
     </div>
+    </PasswordGate>
   )
 }
