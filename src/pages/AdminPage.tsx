@@ -7,7 +7,7 @@ const BASE_URL = window.location.origin
 
 const EMPTY = {
   slug: '', nome_evento: '', nome_expositor: '', cor_primaria: '#6366f1',
-  whatsapp_expositor: '', data_evento: '', local_evento: '',
+  whatsapp_expositor: '', data_evento: '', local_evento: '', webhook_url: '',
   mensagem_auto: 'Olá {{nome}}! 👋 Foi ótimo te conhecer na {{evento}}. Em breve entramos em contato com mais informações. Qualquer dúvida é só chamar!'
 }
 
@@ -119,6 +119,14 @@ export default function AdminPage() {
             <label className="text-[11px] font-bold text-white/40 block mb-1">Local do evento</label>
             <input value={form.local_evento} onChange={e => set('local_evento', e.target.value)}
               placeholder="Ex: Centro de Convenções — Brasília, DF" className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-violet-500" />
+          </div>
+
+          <div>
+            <label className="text-[11px] font-bold text-white/40 block mb-1">Webhook WhatsApp (n8n) <span className="font-normal text-white/20">opcional</span></label>
+            <input value={form.webhook_url} onChange={e => set('webhook_url', e.target.value)}
+              placeholder="https://n8n.btechsouto.shop/webhook/expo-leads"
+              className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-violet-500 font-mono" />
+            <p className="text-[10px] text-white/25 mt-1">Quando preenchido, dispara mensagem WhatsApp automática a cada novo lead.</p>
           </div>
 
           <div>

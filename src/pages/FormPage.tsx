@@ -36,7 +36,7 @@ export default function FormPage() {
     setSubmitting(true)
     setError('')
     try {
-      await submitLead(evento.id, {
+      await submitLead(evento, {
         nome: form.nome.trim(),
         whatsapp: '55' + form.whatsapp.replace(/\D/g, ''),
         email: form.email.trim() || undefined,
