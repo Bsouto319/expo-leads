@@ -1,5 +1,5 @@
 export function exportToCSV(leads: any[], filename = 'leads.csv') {
-  const cols = ['Nome', 'Telefone', 'E-mail', 'Empresa', 'Interesse', 'Status', 'Notas', 'Data cadastro']
+  const cols = ['Nome', 'Telefone', 'E-mail', 'Empresa', 'Interesse', 'Status', 'Notas', 'Data', 'Hora']
 
   const statusLabel: Record<string, string> = {
     novo: 'Novo',
@@ -12,6 +12,7 @@ export function exportToCSV(leads: any[], filename = 'leads.csv') {
     // Telefone: mantém como veio no formulário (sem reformatar)
     const telefone = String(l.whatsapp || '').replace(/\D/g, '')
 
+    const dt = l.created_at ? new Date(l.created_at) : null
     return [
       l.nome || '',
       telefone,
@@ -20,18 +21,12 @@ export function exportToCSV(leads: any[], filename = 'leads.csv') {
       l.interesse || '',
       statusLabel[l.status] || l.status || '',
       (l.notas || '').replace(/\n/g, ' '),
-      l.created_at ? new Date(l.created_at).toLocaleString('pt-BR') : '',
+      dt ? dt.toLocaleDateString('pt-BR') : '',
+      dt ? dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '',
     ]
   })
 
-  // sep=; força Excel a usar ponto-e-vírgula como separador
-  // Prefixo ' nas células numéricas para Excel não converter telefone em número
-  const escape = (v: string) => {
-    const s = String(v)
-    // Número puro: adiciona apóstrofo para preservar zeros à esquerda
-    if (/^\d+$/.test(s)) return `"='${s}'"`
-    return `"${s.replace(/"/g, '""')}"`
-  }
+  const escape = (v: string) => `"${String(v).replace(/"/g, '""')}"`
 
   const header = cols.map(c => `"${c}"`).join(';')
   const body = rows.map(row => row.map(escape).join(';')).join('\n')
