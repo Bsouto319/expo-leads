@@ -10,7 +10,7 @@ export function exportToCSV(leads: any[], filename = 'leads.csv') {
     l.created_at ? new Date(l.created_at).toLocaleString('pt-BR') : '',
   ])
   const csv = [cols, ...rows]
-    .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+    .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';'))
     .join('\n')
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
