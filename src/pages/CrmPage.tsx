@@ -1,20 +1,41 @@
-import { useEffect, useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { getEvento, getLeads, updateLeadStatus } from '../lib/api'
-import { Users, RefreshCw, Phone, Mail, Building2, MessageSquare, Clock, CheckCircle, XCircle, Star } from 'lucide-react'
+import { RefreshCw, Phone, Mail, Building2 } from 'lucide-react'
 import PasswordGate from '../components/PasswordGate'
 
-const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
-  novo:        { label: 'Novo',        color: '#6366f1', bg: '#6366f120' },
-  contatado:   { label: 'Contatado',   color: '#f59e0b', bg: '#f59e0b20' },
-  qualificado: { label: 'Qualificado', color: '#10b981', bg: '#10b98120' },
-  perdido:     { label: 'Perdido',     color: '#6b7280', bg: '#6b728020' },
+const COLUMNS = [
+  { id: 'novo',        label: 'Novo',        color: '#64748b', bg: '#f1f5f9', header: '#e2e8f0' },
+  { id: 'contatado',   label: 'Contatado',   color: '#d97706', bg: '#fffbeb', header: '#fef3c7' },
+  { id: 'qualificado', label: 'Qualificado', color: '#2563eb', bg: '#eff6ff', header: '#dbeafe' },
+  { id: 'perdido',     label: 'Perdido',     color: '#9ca3af', bg: '#f9fafb', header: '#f3f4f6' },
+]
+
+const AVATAR_COLORS = ['#3b82f6','#8b5cf6','#ec4899','#f59e0b','#10b981','#ef4444','#06b6d4','#84cc16']
+
+function initials(nome: string) {
+  const parts = (nome || '').trim().split(/\s+/).filter(Boolean)
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
+  return (parts[0]?.[0] || '?').toUpperCase()
+}
+
+function avatarColor(nome: string) {
+  const sum = (nome || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0)
+  return AVATAR_COLORS[sum % AVATAR_COLORS.length]
 }
 
 function fmt(phone: string) {
-  const d = phone.replace(/\D/g, '').replace(/^55/, '')
+  const d = (phone || '').replace(/\D/g, '').replace(/^55/, '')
   if (d.length === 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`
+  if (d.length === 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`
   return phone
+}
+
+function whatsappUrl(phone: string) {
+  const digits = (phone || '').replace(/\D/g, '')
+  if (digits.length === 11) return `https://wa.me/55${digits}`
+  if (digits.length === 13) return `https://wa.me/${digits}`
+  return `https://wa.me/55${digits}`
 }
 
 function timeAgo(ts: string) {
@@ -27,195 +48,321 @@ function timeAgo(ts: string) {
   return `${Math.floor(h / 24)}d atrás`
 }
 
+function StatBox({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div style={{ textAlign: 'center' }}>
+      <div style={{ fontSize: 20, fontWeight: 800, color, fontFamily: 'Sora, sans-serif', lineHeight: 1 }}>{value}</div>
+      <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>{label}</div>
+    </div>
+  )
+}
+
+function InfoBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 12px' }}>
+      <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</div>
+    </div>
+  )
+}
+
+function Tag({ color, bg, children }: { color: string; bg: string; children: React.ReactNode }) {
+  return (
+    <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, fontWeight: 700, color, background: bg }}>
+      {children}
+    </span>
+  )
+}
+
+function KanbanCard({ lead, onMove, onOpen, col }: { lead: any; onMove: (lead: any, status: string, e?: any) => void; onOpen: (lead: any) => void; col: typeof COLUMNS[0] }) {
+  const nextCols = COLUMNS.filter(c => c.id !== lead.status)
+  return (
+    <div onClick={() => onOpen(lead)}
+      style={{ background: 'white', border: `1px solid ${col.header}`, borderRadius: 10, padding: '12px', cursor: 'pointer', transition: 'box-shadow 0.15s' }}
+      onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'}
+      onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.boxShadow = 'none'}>
+      {/* Avatar + nome */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <div style={{ width: 32, height: 32, borderRadius: '50%', background: avatarColor(lead.nome), display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <span style={{ color: 'white', fontWeight: 800, fontSize: 11, fontFamily: 'Sora, sans-serif' }}>{initials(lead.nome)}</span>
+        </div>
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          <div style={{ fontWeight: 700, fontSize: 13, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lead.nome}</div>
+          <div style={{ fontSize: 11, color: '#94a3b8' }}>{fmt(lead.whatsapp)}</div>
+        </div>
+        <span style={{ fontSize: 10, color: '#94a3b8', flexShrink: 0 }}>{timeAgo(lead.created_at)}</span>
+      </div>
+      {/* Tags */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
+        {lead.empresa && <Tag color="#2563eb" bg="#eff6ff"><Building2 size={9} style={{ display: 'inline', verticalAlign: 'middle' }} /> {lead.empresa}</Tag>}
+        {lead.interesse && <Tag color="#7c3aed" bg="#f5f3ff">⭐ {lead.interesse.slice(0, 20)}{lead.interesse.length > 20 ? '…' : ''}</Tag>}
+      </div>
+      {/* Mover */}
+      <div style={{ display: 'flex', gap: 4, borderTop: '1px solid #f1f5f9', paddingTop: 8 }} onClick={e => e.stopPropagation()}>
+        {nextCols.slice(0, 3).map(c => (
+          <button key={c.id} onClick={e => onMove(lead, c.id, e)}
+            style={{ fontSize: 9, padding: '3px 7px', borderRadius: 20, border: `1.5px solid ${c.color}`, color: c.color, background: 'transparent', cursor: 'pointer', fontWeight: 700 }}>
+            {c.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function MobileList({ leads, onOpen }: { leads: any[]; onOpen: (lead: any) => void }) {
+  return (
+    <div>
+      {COLUMNS.map(col => {
+        const colLeads = leads.filter((l: any) => l.status === col.id)
+        if (colLeads.length === 0) return null
+        return (
+          <div key={col.id} style={{ marginBottom: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: col.header, borderBottom: `2px solid ${col.header}`, position: 'sticky', top: 0 }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: col.color }} />
+              <span style={{ fontSize: 11, fontWeight: 800, color: col.color, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'Sora, sans-serif' }}>{col.label}</span>
+              <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 800, color: col.color }}>{colLeads.length}</span>
+            </div>
+            <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {colLeads.map((lead: any) => (
+                <button key={lead.id} onClick={() => onOpen(lead)}
+                  style={{ width: '100%', textAlign: 'left', background: 'white', border: `1px solid ${col.header}`, borderLeft: `4px solid ${col.color}`, borderRadius: 10, padding: '12px 14px', cursor: 'pointer' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: '50%', background: avatarColor(lead.nome), display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <span style={{ color: 'white', fontWeight: 800, fontSize: 12, fontFamily: 'Sora, sans-serif' }}>{initials(lead.nome)}</span>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 15, color: '#0f172a' }}>{lead.nome}</div>
+                      <div style={{ fontSize: 13, color: '#64748b' }}>{fmt(lead.whatsapp)}</div>
+                    </div>
+                    <span style={{ fontSize: 11, color: '#94a3b8' }}>{timeAgo(lead.created_at)}</span>
+                  </div>
+                  {(lead.empresa || lead.interesse) && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {lead.empresa && <Tag color="#2563eb" bg="#eff6ff">{lead.empresa}</Tag>}
+                      {lead.interesse && <Tag color="#7c3aed" bg="#f5f3ff">{lead.interesse.slice(0, 24)}{lead.interesse.length > 24 ? '…' : ''}</Tag>}
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        )
+      })}
+      {leads.length === 0 && (
+        <div style={{ textAlign: 'center', color: '#94a3b8', padding: '60px 0', fontSize: 14 }}>Nenhum lead ainda</div>
+      )}
+    </div>
+  )
+}
+
 export default function CrmPage() {
   const { slug } = useParams<{ slug: string }>()
   const [evento, setEvento] = useState<any>(null)
   const [leads, setLeads] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('todos')
+  const [filter, setFilter] = useState('')
   const [selected, setSelected] = useState<any>(null)
   const [notesText, setNotesText] = useState('')
+  const [saving, setSaving] = useState(false)
 
   async function load() {
     if (!slug) return
     const ev = await getEvento(slug)
     setEvento(ev)
-    if (ev) {
-      const ls = await getLeads(ev.id)
-      setLeads(ls)
-    }
+    if (ev) setLeads(await getLeads(ev.id))
     setLoading(false)
   }
 
   useEffect(() => { load() }, [slug])
 
-  const cor = evento?.cor_primaria || '#6366f1'
-
-  const filtered = leads.filter(l => filter === 'todos' || l.status === filter)
-
-  async function changeStatus(leadId: string, status: string) {
-    await updateLeadStatus(leadId, status)
-    setLeads(ls => ls.map(l => l.id === leadId ? { ...l, status } : l))
-    if (selected?.id === leadId) setSelected((s: any) => ({ ...s, status }))
+  async function moveStatus(lead: any, status: string, e?: any) {
+    e?.stopPropagation()
+    setLeads(ls => ls.map(l => l.id === lead.id ? { ...l, status } : l))
+    await updateLeadStatus(lead.id, status)
+    if (selected?.id === lead.id) setSelected((s: any) => ({ ...s, status }))
   }
 
   async function saveNotes() {
     if (!selected) return
+    setSaving(true)
     await updateLeadStatus(selected.id, selected.status, notesText)
     setLeads(ls => ls.map(l => l.id === selected.id ? { ...l, notas: notesText } : l))
     setSelected((s: any) => ({ ...s, notas: notesText }))
+    setSaving(false)
+    setSelected(null)
   }
 
+  function openLead(lead: any) { setSelected(lead); setNotesText(lead.notas || '') }
+
   if (loading) return (
-    <div className="min-h-svh flex items-center justify-center bg-gray-50">
+    <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f0f5fb' }}>
       <RefreshCw className="animate-spin text-gray-400" size={28} />
     </div>
   )
 
   if (!evento) return (
-    <div className="min-h-svh flex items-center justify-center text-gray-400">Evento não encontrado.</div>
+    <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>Evento não encontrado.</div>
   )
 
+  const cor = evento.cor_primaria || '#2563eb'
   const crmSenha = evento.crm_senha || import.meta.env.VITE_ADMIN_PASSWORD
+
+  const filtered = leads.filter(l =>
+    !filter ||
+    (l.nome || '').toLowerCase().includes(filter.toLowerCase()) ||
+    (l.whatsapp || '').includes(filter) ||
+    (l.empresa || '').toLowerCase().includes(filter.toLowerCase())
+  )
+
+  const total      = leads.length
+  const novos      = leads.filter(l => l.status === 'novo').length
+  const qualif     = leads.filter(l => l.status === 'qualificado').length
+  const contatados = leads.filter(l => l.status === 'contatado').length
 
   return (
     <PasswordGate storageKey={`crm-${slug}`} correctPassword={crmSenha} title={`CRM — ${evento.nome_expositor}`}>
-    <div className="min-h-svh flex flex-col bg-gray-50">
-      {/* Header */}
-      <div className="px-4 py-4 flex items-center justify-between shadow-sm" style={{ background: cor }}>
-        <div>
-          <div className="text-white font-black text-base leading-none">{evento.nome_expositor}</div>
-          <div className="text-white/70 text-xs mt-0.5">{evento.nome_evento}</div>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="text-right">
-            <div className="text-white font-black text-xl leading-none">{leads.length}</div>
-            <div className="text-white/60 text-[10px]">leads</div>
+    <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', background: '#f0f5fb', fontFamily: 'DM Sans, sans-serif' }}>
+
+      {/* Topbar */}
+      <div style={{ background: 'white', borderBottom: '1px solid #e2e8f0', padding: '12px 20px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginRight: 'auto' }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: `linear-gradient(135deg,${cor}cc,${cor})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <span style={{ color: 'white', fontWeight: 900, fontSize: 11, fontFamily: 'Sora, sans-serif' }}>{initials(evento.nome_expositor)}</span>
           </div>
-          <button onClick={load} className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition">
-            <RefreshCw size={16} className="text-white" />
+          <div>
+            <p style={{ color: '#0f172a', fontWeight: 800, fontSize: 15, margin: 0, lineHeight: 1.2, fontFamily: 'Sora, sans-serif' }}>{evento.nome_expositor}</p>
+            <p style={{ color: '#94a3b8', fontSize: 11, margin: 0 }}>{evento.nome_evento}</p>
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+          <StatBox label="Total"      value={total}      color="#0f172a" />
+          <StatBox label="Novos"      value={novos}      color="#64748b" />
+          <StatBox label="Contatados" value={contatados} color="#d97706" />
+          <StatBox label="Qualif."    value={qualif}     color="#2563eb" />
+        </div>
+
+        {/* Busca + refresh */}
+        <div style={{ display: 'flex', gap: 8, width: '100%', maxWidth: 320 }}>
+          <input type="text" value={filter} onChange={e => setFilter(e.target.value)}
+            placeholder="Buscar nome, empresa, telefone..."
+            style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: '1.5px solid #e2e8f0', background: '#f8fafc', color: '#0f172a', fontSize: 13, outline: 'none', fontFamily: 'DM Sans, sans-serif' }} />
+          <button onClick={load}
+            style={{ padding: '8px 12px', borderRadius: 8, border: '1.5px solid #e2e8f0', background: 'white', color: '#64748b', fontSize: 14, cursor: 'pointer' }}>
+            ↻
           </button>
         </div>
       </div>
 
-      {/* Status filters */}
-      <div className="flex gap-2 px-4 py-3 overflow-x-auto">
-        {(['todos', 'novo', 'contatado', 'qualificado', 'perdido'] as const).map(s => (
-          <button key={s} onClick={() => setFilter(s)}
-            className="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition border"
-            style={{
-              background: filter === s ? (s === 'todos' ? cor : STATUS_META[s]?.bg) : 'white',
-              borderColor: filter === s ? (s === 'todos' ? cor : STATUS_META[s]?.color) : '#e5e7eb',
-              color: filter === s ? (s === 'todos' ? cor : STATUS_META[s]?.color) : '#6b7280',
-            }}>
-            {s === 'todos' ? `Todos (${leads.length})` : `${STATUS_META[s].label} (${leads.filter(l => l.status === s).length})`}
-          </button>
-        ))}
-      </div>
-
-      {/* Lead list */}
-      <div className="flex-1 px-4 pb-6 space-y-2 overflow-y-auto">
-        {filtered.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-20 gap-3 text-gray-400">
-            <Users size={40} strokeWidth={1} />
-            <p className="text-sm">Nenhum lead ainda</p>
+      {/* Conteúdo */}
+      {loading ? (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 14 }}>Carregando leads...</div>
+      ) : (
+        <>
+          {/* Mobile: lista por seção */}
+          <div style={{ display: 'block' }} className="md-hide">
+            <MobileList leads={filtered} onOpen={openLead} />
           </div>
-        )}
-        {filtered.map(lead => {
-          const meta = STATUS_META[lead.status] || STATUS_META.novo
-          return (
-            <div key={lead.id}
-              onClick={() => { setSelected(lead); setNotesText(lead.notas || '') }}
-              className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 cursor-pointer active:scale-[0.99] transition">
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex-1 min-w-0">
-                  <div className="font-black text-gray-800 text-sm truncate">{lead.nome}</div>
-                  {lead.empresa && <div className="text-gray-500 text-xs mt-0.5 flex items-center gap-1"><Building2 size={10} />{lead.empresa}</div>}
-                  <div className="text-gray-400 text-xs mt-1 flex items-center gap-1"><Clock size={10} />{timeAgo(lead.created_at)}</div>
-                </div>
-                <span className="shrink-0 px-2.5 py-1 rounded-full text-[10px] font-black"
-                  style={{ background: meta.bg, color: meta.color }}>{meta.label}</span>
-              </div>
-              <div className="flex items-center gap-3 mt-2.5 pt-2.5 border-t border-gray-50">
-                <a href={`https://wa.me/${lead.whatsapp}`} target="_blank" rel="noreferrer"
-                  onClick={e => e.stopPropagation()}
-                  className="flex items-center gap-1 text-emerald-600 text-xs font-bold">
-                  <Phone size={12} /> {fmt(lead.whatsapp)}
-                </a>
-                {lead.email && <span className="flex items-center gap-1 text-gray-400 text-xs"><Mail size={10} />{lead.email}</span>}
-              </div>
+
+          {/* Desktop: Kanban */}
+          <div style={{ flex: 1, overflowX: 'auto', padding: '20px 16px' }}>
+            <div style={{ display: 'flex', gap: 12, minWidth: 'max-content', height: '100%', alignItems: 'flex-start' }}>
+              {COLUMNS.map(col => {
+                const colLeads = filtered.filter(l => l.status === col.id)
+                return (
+                  <div key={col.id} style={{ width: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRadius: 14, overflow: 'hidden', background: col.bg, border: `1px solid ${col.header}` }}>
+                    <div style={{ padding: '10px 14px', background: col.header, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: col.color, flexShrink: 0 }} />
+                      <span style={{ fontWeight: 800, fontSize: 12, color: col.color, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'Sora, sans-serif' }}>{col.label}</span>
+                      <span style={{ marginLeft: 'auto', background: 'white', color: col.color, fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 20 }}>{colLeads.length}</span>
+                    </div>
+                    <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 80 }}>
+                      {colLeads.map(lead => (
+                        <KanbanCard key={lead.id} lead={lead} col={col} onMove={moveStatus} onOpen={openLead} />
+                      ))}
+                      {colLeads.length === 0 && (
+                        <div style={{ color: '#cbd5e1', fontSize: 12, textAlign: 'center', padding: '16px 0' }}>Nenhum lead</div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
-          )
-        })}
-      </div>
+          </div>
+        </>
+      )}
 
-      {/* Lead detail drawer */}
+      {/* Modal detalhe */}
       {selected && (
-        <div className="fixed inset-0 z-50 flex flex-col justify-end" style={{ background: 'rgba(0,0,0,0.4)' }}
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 50 }}
           onClick={e => e.target === e.currentTarget && setSelected(null)}>
-          <div className="bg-white rounded-t-3xl px-5 pt-5 pb-8 max-h-[85vh] overflow-y-auto">
-            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
-            <div className="flex items-start justify-between gap-2 mb-4">
-              <div>
-                <h3 className="font-black text-gray-800 text-lg">{selected.nome}</h3>
-                {selected.empresa && <p className="text-gray-500 text-sm">{selected.empresa}</p>}
+          <div style={{ background: 'white', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: 520, padding: '28px 24px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 -8px 40px rgba(0,0,0,0.15)' }}>
+
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
+              <div style={{ width: 52, height: 52, borderRadius: '50%', background: avatarColor(selected.nome), display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <span style={{ color: 'white', fontWeight: 800, fontSize: 18, fontFamily: 'Sora, sans-serif' }}>{initials(selected.nome)}</span>
               </div>
-              <button onClick={() => setSelected(null)} className="p-2 rounded-full bg-gray-100 text-gray-400"><XCircle size={18} /></button>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#0f172a', fontFamily: 'Sora, sans-serif' }}>{selected.nome}</h3>
+                <p style={{ margin: '2px 0 0', fontSize: 13, color: '#94a3b8' }}>{new Date(selected.created_at).toLocaleString('pt-BR')}</p>
+              </div>
+              <button onClick={() => setSelected(null)} style={{ width: 36, height: 36, borderRadius: '50%', border: 'none', background: '#f1f5f9', color: '#64748b', fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>×</button>
             </div>
 
-            {/* Contato */}
-            <div className="space-y-2 mb-4">
-              <a href={`https://wa.me/${selected.whatsapp}`} target="_blank" rel="noreferrer"
-                className="flex items-center gap-3 p-3 bg-emerald-50 rounded-xl text-emerald-700 font-bold text-sm">
-                <Phone size={16} /> {fmt(selected.whatsapp)}
+            {/* Infos */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+              <InfoBox label="WhatsApp" value={fmt(selected.whatsapp)} />
+              <InfoBox label="E-mail"   value={selected.email || '—'} />
+              {selected.empresa  && <InfoBox label="Empresa"   value={selected.empresa} />}
+              {selected.interesse && <InfoBox label="Interesse" value={selected.interesse} />}
+            </div>
+
+            {/* Contato rápido */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              <a href={whatsappUrl(selected.whatsapp)} target="_blank" rel="noreferrer"
+                style={{ flex: 1, padding: '12px', borderRadius: 12, background: '#22c55e', color: 'white', fontSize: 13, fontWeight: 800, textAlign: 'center', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: 'Sora, sans-serif' }}>
+                <Phone size={15} /> WhatsApp
               </a>
               {selected.email && (
                 <a href={`mailto:${selected.email}`}
-                  className="flex items-center gap-3 p-3 bg-blue-50 rounded-xl text-blue-700 font-bold text-sm">
-                  <Mail size={16} /> {selected.email}
+                  style={{ flex: 1, padding: '12px', borderRadius: 12, background: '#eff6ff', color: '#2563eb', fontSize: 13, fontWeight: 800, textAlign: 'center', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: 'Sora, sans-serif' }}>
+                  <Mail size={15} /> E-mail
                 </a>
               )}
             </div>
 
-            {/* Interesse */}
-            {selected.interesse && (
-              <div className="mb-4 p-3 bg-gray-50 rounded-xl">
-                <p className="text-xs font-bold text-gray-400 mb-1 flex items-center gap-1"><Star size={10} />Interesse</p>
-                <p className="text-gray-700 text-sm">{selected.interesse}</p>
-              </div>
-            )}
-
             {/* Status */}
-            <div className="mb-4">
-              <p className="text-xs font-bold text-gray-400 mb-2">Status</p>
-              <div className="grid grid-cols-2 gap-2">
-                {Object.entries(STATUS_META).map(([key, meta]) => (
-                  <button key={key} onClick={() => changeStatus(selected.id, key)}
-                    className="py-2.5 px-3 rounded-xl text-xs font-black transition border-2"
-                    style={{
-                      background: selected.status === key ? meta.bg : 'transparent',
-                      borderColor: selected.status === key ? meta.color : '#e5e7eb',
-                      color: selected.status === key ? meta.color : '#9ca3af',
-                    }}>
-                    {selected.status === key ? '✓ ' : ''}{meta.label}
+            <div style={{ marginBottom: 16 }}>
+              <p style={{ color: '#64748b', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>Mover para</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {COLUMNS.map(col => (
+                  <button key={col.id} onClick={() => moveStatus(selected, col.id)}
+                    style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: `2px solid ${col.color}`, transition: 'all 0.15s',
+                      background: selected.status === col.id ? col.color : 'transparent',
+                      color: selected.status === col.id ? 'white' : col.color }}>
+                    {col.label}
                   </button>
                 ))}
               </div>
             </div>
 
             {/* Notas */}
-            <div>
-              <p className="text-xs font-bold text-gray-400 mb-2 flex items-center gap-1"><MessageSquare size={10} />Anotações</p>
+            <div style={{ marginBottom: 16 }}>
+              <p style={{ color: '#64748b', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>Anotações</p>
               <textarea value={notesText} onChange={e => setNotesText(e.target.value)}
-                placeholder="Anotações sobre esse lead..."
+                placeholder="Anotações sobre o lead..."
                 rows={3}
-                className="w-full px-3 py-2.5 rounded-xl border-2 border-gray-200 text-gray-700 text-sm resize-none focus:outline-none focus:border-indigo-300" />
-              <button onClick={saveNotes}
-                className="w-full mt-2 py-3 rounded-xl font-black text-white text-sm flex items-center justify-center gap-2"
-                style={{ background: cor }}>
-                <CheckCircle size={16} /> Salvar anotações
-              </button>
+                style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', background: '#f8fafc', color: '#0f172a', fontSize: 14, outline: 'none', resize: 'vertical', fontFamily: 'DM Sans, sans-serif', boxSizing: 'border-box' }} />
             </div>
+
+            <button onClick={saveNotes} disabled={saving}
+              style={{ width: '100%', padding: '14px', borderRadius: 12, border: 'none', background: cor, color: 'white', fontSize: 14, fontWeight: 800, cursor: 'pointer', opacity: saving ? 0.7 : 1, fontFamily: 'Sora, sans-serif' }}>
+              {saving ? 'Salvando...' : 'Salvar'}
+            </button>
+
           </div>
         </div>
       )}
