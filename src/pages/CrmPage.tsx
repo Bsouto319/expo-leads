@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { getEvento, getLeads, updateLeadStatus } from '../lib/api'
 import { RefreshCw, Phone, Mail, Building2 } from 'lucide-react'
 import PasswordGate from '../components/PasswordGate'
+import { exportToCSV } from '../utils/export'
 
 const COLUMNS = [
   { id: 'novo',        label: 'Novo',        color: '#64748b', bg: '#f1f5f9', header: '#e2e8f0' },
@@ -244,11 +245,15 @@ export default function CrmPage() {
           <StatBox label="Qualif."    value={qualif}     color="#2563eb" />
         </div>
 
-        {/* Busca + refresh */}
-        <div style={{ display: 'flex', gap: 8, width: '100%', maxWidth: 320 }}>
+        {/* Busca + export + refresh */}
+        <div style={{ display: 'flex', gap: 8, width: '100%', maxWidth: 360 }}>
           <input type="text" value={filter} onChange={e => setFilter(e.target.value)}
             placeholder="Buscar nome, empresa, telefone..."
             style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: '1.5px solid #e2e8f0', background: '#f8fafc', color: '#0f172a', fontSize: 13, outline: 'none', fontFamily: 'DM Sans, sans-serif' }} />
+          <button onClick={() => exportToCSV(leads, `${evento?.nome_expositor || 'leads'}.csv`)}
+            style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#2563eb', color: 'white', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            ↓ CSV
+          </button>
           <button onClick={load}
             style={{ padding: '8px 12px', borderRadius: 8, border: '1.5px solid #e2e8f0', background: 'white', color: '#64748b', fontSize: 14, cursor: 'pointer' }}>
             ↻
