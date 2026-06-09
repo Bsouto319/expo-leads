@@ -1,377 +1,471 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
-import { getEvento, getLeads, updateLeadStatus } from '../lib/api'
-import { RefreshCw, Phone, Mail, Building2 } from 'lucide-react'
+import { getEvento, getLeads, updateLead, addLeadNota, type Evento, type Lead, type HistoricoItem } from '../lib/api'
+import { RefreshCw, Search, Mail, Building2, X, Download, BarChart2, Star, MessageCircle, Send } from 'lucide-react'
 import PasswordGate from '../components/PasswordGate'
 import { exportToCSV } from '../utils/export'
 
-const COLUMNS = [
-  { id: 'novo',        label: 'Novo',        color: '#64748b', bg: '#f1f5f9', header: '#e2e8f0' },
-  { id: 'contatado',   label: 'Contatado',   color: '#d97706', bg: '#fffbeb', header: '#fef3c7' },
-  { id: 'qualificado', label: 'Qualificado', color: '#2563eb', bg: '#eff6ff', header: '#dbeafe' },
-  { id: 'perdido',     label: 'Perdido',     color: '#9ca3af', bg: '#f9fafb', header: '#f3f4f6' },
+const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD as string
+
+// ── Configuração de estágios ───────────────────────────────────────────────────
+const STAGES = [
+  { id: 'novo',        label: 'Novo',        short: 'Novo',     color: '#6366f1', bg: '#f0f0ff', pill: '#e0e0ff' },
+  { id: 'abordado',   label: 'Abordado',    short: 'Abordado', color: '#f59e0b', bg: '#fffbeb', pill: '#fef3c7' },
+  { id: 'qualificado',label: 'Qualificado', short: 'Qualif.',  color: '#3b82f6', bg: '#eff6ff', pill: '#dbeafe' },
+  { id: 'em_proposta',label: 'Em Proposta', short: 'Proposta', color: '#8b5cf6', bg: '#f5f3ff', pill: '#ede9fe' },
+  { id: 'ganho',      label: 'Fechado ✅',   short: 'Fechado',  color: '#10b981', bg: '#f0fdf4', pill: '#d1fae5' },
+  { id: 'perdido',    label: 'Perdido',     short: 'Perdido',  color: '#ef4444', bg: '#fef2f2', pill: '#fee2e2' },
 ]
 
-const AVATAR_COLORS = ['#3b82f6','#8b5cf6','#ec4899','#f59e0b','#10b981','#ef4444','#06b6d4','#84cc16']
+const AVATAR_COLORS = ['#6366f1','#8b5cf6','#ec4899','#f59e0b','#10b981','#ef4444','#06b6d4','#84cc16']
 
+// ── helpers ────────────────────────────────────────────────────────────────────
 function initials(nome: string) {
-  const parts = (nome || '').trim().split(/\s+/).filter(Boolean)
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
-  return (parts[0]?.[0] || '?').toUpperCase()
+  const p = (nome || '').trim().split(/\s+/).filter(Boolean)
+  if (p.length >= 2) return (p[0][0] + p[1][0]).toUpperCase()
+  return (p[0]?.[0] || '?').toUpperCase()
 }
-
 function avatarColor(nome: string) {
-  const sum = (nome || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0)
-  return AVATAR_COLORS[sum % AVATAR_COLORS.length]
+  const s = (nome || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0)
+  return AVATAR_COLORS[s % AVATAR_COLORS.length]
 }
-
-function fmt(phone: string) {
+function fmtPhone(phone: string) {
   const d = (phone || '').replace(/\D/g, '').replace(/^55/, '')
   if (d.length === 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`
   if (d.length === 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`
   return phone
 }
-
-function whatsappUrl(phone: string) {
-  const digits = (phone || '').replace(/\D/g, '')
-  if (digits.length === 11) return `https://wa.me/55${digits}`
-  if (digits.length === 13) return `https://wa.me/${digits}`
-  return `https://wa.me/55${digits}`
+function waUrl(phone: string) {
+  const d = (phone || '').replace(/\D/g, '')
+  if (d.length === 11) return `https://wa.me/55${d}`
+  if (d.startsWith('55') && d.length >= 12) return `https://wa.me/${d}`
+  return `https://wa.me/55${d}`
 }
-
 function timeAgo(ts: string) {
-  const diff = Date.now() - new Date(ts).getTime()
-  const m = Math.floor(diff / 60000)
+  const m = Math.floor((Date.now() - new Date(ts).getTime()) / 60000)
   if (m < 1) return 'agora'
-  if (m < 60) return `${m}min atrás`
+  if (m < 60) return `${m}min`
   const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h atrás`
-  return `${Math.floor(h / 24)}d atrás`
+  if (h < 24) return `${h}h`
+  return `${Math.floor(h/24)}d`
 }
-
-function StatBox({ label, value, color }: { label: string; value: number; color: string }) {
-  return (
-    <div style={{ textAlign: 'center' }}>
-      <div style={{ fontSize: 20, fontWeight: 800, color, fontFamily: 'Sora, sans-serif', lineHeight: 1 }}>{value}</div>
-      <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>{label}</div>
-    </div>
-  )
+function fmtDate(ts: string) {
+  return new Date(ts).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
+function stageConfig(id: string) { return STAGES.find(s => s.id === id) || STAGES[0] }
 
-function InfoBox({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 12px' }}>
-      <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</div>
-    </div>
-  )
-}
+// ── Lead Modal ─────────────────────────────────────────────────────────────────
+function LeadModal({ lead, onClose, onUpdate, cor }: {
+  lead: Lead; onClose: () => void; onUpdate: (l: Lead) => void; cor: string
+}) {
+  const [status, setStatus] = useState(lead.status)
+  const [nota, setNota] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [historico, setHistorico] = useState<HistoricoItem[]>(lead.historico || [])
+  const [savingNota, setSavingNota] = useState(false)
 
-function Tag({ color, bg, children }: { color: string; bg: string; children: React.ReactNode }) {
-  return (
-    <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, fontWeight: 700, color, background: bg }}>
-      {children}
-    </span>
-  )
-}
+  const stage = stageConfig(status)
 
-function KanbanCard({ lead, onMove, onOpen, col }: { lead: any; onMove: (lead: any, status: string, e?: any) => void; onOpen: (lead: any) => void; col: typeof COLUMNS[0] }) {
-  const nextCols = COLUMNS.filter(c => c.id !== lead.status)
+  async function saveStage(newStatus: string) {
+    setStatus(newStatus)
+    await updateLead(lead.id, { status: newStatus })
+    onUpdate({ ...lead, status: newStatus })
+  }
+
+  async function submitNota() {
+    if (!nota.trim()) return
+    setSavingNota(true)
+    try {
+      const updated = await addLeadNota(lead, nota.trim())
+      setHistorico(updated)
+      setNota('')
+      onUpdate({ ...lead, historico: updated, status })
+    } finally { setSavingNota(false) }
+  }
+
+  async function saveAndClose() {
+    setSaving(true)
+    await updateLead(lead.id, { status })
+    onUpdate({ ...lead, status })
+    setSaving(false)
+    onClose()
+  }
+
+  const extras = lead.campos_extras_valores || {}
+  const hasExtras = Object.keys(extras).length > 0
+
   return (
-    <div onClick={() => onOpen(lead)}
-      style={{ background: 'white', border: `1px solid ${col.header}`, borderRadius: 10, padding: '12px', cursor: 'pointer', transition: 'box-shadow 0.15s' }}
-      onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'}
-      onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.boxShadow = 'none'}>
-      {/* Avatar + nome */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-        <div style={{ width: 32, height: 32, borderRadius: '50%', background: avatarColor(lead.nome), display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <span style={{ color: 'white', fontWeight: 800, fontSize: 11, fontFamily: 'Sora, sans-serif' }}>{initials(lead.nome)}</span>
-        </div>
-        <div style={{ flex: 1, overflow: 'hidden' }}>
-          <div style={{ fontWeight: 700, fontSize: 13, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lead.nome}</div>
-          <div style={{ fontSize: 11, color: '#94a3b8' }}>{fmt(lead.whatsapp)}</div>
-        </div>
-        <span style={{ fontSize: 10, color: '#94a3b8', flexShrink: 0 }}>{timeAgo(lead.created_at)}</span>
-      </div>
-      {/* Tags */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
-        {lead.empresa && <Tag color="#2563eb" bg="#eff6ff"><Building2 size={9} style={{ display: 'inline', verticalAlign: 'middle' }} /> {lead.empresa}</Tag>}
-        {lead.interesse && <Tag color="#7c3aed" bg="#f5f3ff">⭐ {lead.interesse.slice(0, 20)}{lead.interesse.length > 20 ? '…' : ''}</Tag>}
-      </div>
-      {/* Mover */}
-      <div style={{ display: 'flex', gap: 4, borderTop: '1px solid #f1f5f9', paddingTop: 8 }} onClick={e => e.stopPropagation()}>
-        {nextCols.slice(0, 3).map(c => (
-          <button key={c.id} onClick={e => onMove(lead, c.id, e)}
-            style={{ fontSize: 9, padding: '3px 7px', borderRadius: 20, border: `1.5px solid ${c.color}`, color: c.color, background: 'transparent', cursor: 'pointer', fontWeight: 700 }}>
-            {c.label}
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-t-3xl md:rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden z-10">
+
+        {/* Header */}
+        <div className="px-5 pt-5 pb-4 flex items-center gap-4 border-b border-gray-100">
+          <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-black text-lg shrink-0"
+            style={{ background: avatarColor(lead.nome) }}>
+            {initials(lead.nome)}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-black text-gray-900 text-lg truncate">{lead.nome}</div>
+            <div className="text-sm text-gray-400">{fmtPhone(lead.whatsapp)} · {timeAgo(lead.created_at)}</div>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 p-1.5 rounded-xl hover:bg-gray-100 transition">
+            <X size={20} />
           </button>
-        ))}
-      </div>
-    </div>
-  )
-}
+        </div>
 
-function MobileList({ leads, onOpen }: { leads: any[]; onOpen: (lead: any) => void }) {
-  return (
-    <div>
-      {COLUMNS.map(col => {
-        const colLeads = leads.filter((l: any) => l.status === col.id)
-        if (colLeads.length === 0) return null
-        return (
-          <div key={col.id} style={{ marginBottom: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: col.header, borderBottom: `2px solid ${col.header}`, position: 'sticky', top: 0 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: col.color }} />
-              <span style={{ fontSize: 11, fontWeight: 800, color: col.color, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'Sora, sans-serif' }}>{col.label}</span>
-              <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 800, color: col.color }}>{colLeads.length}</span>
+        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
+
+          {/* Ações rápidas */}
+          <div className="flex gap-2">
+            <a href={waUrl(lead.whatsapp)} target="_blank"
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-bold transition"
+              style={{ background: '#25d366' }}>
+              <MessageCircle size={15} /> WhatsApp
+            </a>
+            {lead.email && (
+              <a href={`mailto:${lead.email}`}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold transition">
+                <Mail size={15} /> E-mail
+              </a>
+            )}
+            {lead.score && (
+              <div className="flex items-center gap-1 px-3 py-2.5 rounded-xl bg-amber-50 text-amber-600 text-sm font-bold">
+                <Star size={14} fill="#f59e0b" /> {lead.score}/5
+              </div>
+            )}
+          </div>
+
+          {/* Dados do lead */}
+          <div className="bg-gray-50 rounded-2xl p-4 space-y-2.5">
+            <div className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Dados</div>
+            {lead.email && (
+              <div className="flex items-center gap-2 text-sm">
+                <Mail size={14} className="text-gray-400 shrink-0" />
+                <span className="text-gray-700">{lead.email}</span>
+              </div>
+            )}
+            {lead.empresa && (
+              <div className="flex items-center gap-2 text-sm">
+                <Building2 size={14} className="text-gray-400 shrink-0" />
+                <span className="text-gray-700">{lead.empresa}</span>
+              </div>
+            )}
+            {lead.interesse && (
+              <div className="flex items-start gap-2 text-sm">
+                <span className="text-gray-400 shrink-0 mt-0.5">🎯</span>
+                <span className="text-gray-700">{lead.interesse}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-gray-400 shrink-0">📅</span>
+              <span className="text-gray-500 text-xs">{fmtDate(lead.created_at)}</span>
+              {lead.fonte && <span className="text-gray-400 text-xs">· {lead.fonte}</span>}
             </div>
-            <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {colLeads.map((lead: any) => (
-                <button key={lead.id} onClick={() => onOpen(lead)}
-                  style={{ width: '100%', textAlign: 'left', background: 'white', border: `1px solid ${col.header}`, borderLeft: `4px solid ${col.color}`, borderRadius: 10, padding: '12px 14px', cursor: 'pointer' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-                    <div style={{ width: 36, height: 36, borderRadius: '50%', background: avatarColor(lead.nome), display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <span style={{ color: 'white', fontWeight: 800, fontSize: 12, fontFamily: 'Sora, sans-serif' }}>{initials(lead.nome)}</span>
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 700, fontSize: 15, color: '#0f172a' }}>{lead.nome}</div>
-                      <div style={{ fontSize: 13, color: '#64748b' }}>{fmt(lead.whatsapp)}</div>
-                    </div>
-                    <span style={{ fontSize: 11, color: '#94a3b8' }}>{timeAgo(lead.created_at)}</span>
-                  </div>
-                  {(lead.empresa || lead.interesse) && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                      {lead.empresa && <Tag color="#2563eb" bg="#eff6ff">{lead.empresa}</Tag>}
-                      {lead.interesse && <Tag color="#7c3aed" bg="#f5f3ff">{lead.interesse.slice(0, 24)}{lead.interesse.length > 24 ? '…' : ''}</Tag>}
-                    </div>
-                  )}
+          </div>
+
+          {/* Campos extras */}
+          {hasExtras && (
+            <div className="bg-indigo-50 rounded-2xl p-4 space-y-2">
+              <div className="text-xs font-bold text-indigo-400 uppercase tracking-wide mb-2">Campos adicionais</div>
+              {Object.entries(extras).map(([k, v]) => (
+                <div key={k} className="flex justify-between text-sm">
+                  <span className="text-gray-500 capitalize">{k.replace(/_/g, ' ')}</span>
+                  <span className="font-semibold text-gray-800">{v}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Estágio */}
+          <div>
+            <div className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Estágio no pipeline</div>
+            <div className="grid grid-cols-3 gap-2">
+              {STAGES.map(s => (
+                <button key={s.id} onClick={() => saveStage(s.id)}
+                  className="py-2 px-3 rounded-xl text-xs font-bold transition border-2"
+                  style={{
+                    background: status === s.id ? s.bg : 'transparent',
+                    borderColor: status === s.id ? s.color : '#e5e7eb',
+                    color: status === s.id ? s.color : '#9ca3af',
+                  }}>
+                  {s.short}
                 </button>
               ))}
             </div>
           </div>
-        )
-      })}
-      {leads.length === 0 && (
-        <div style={{ textAlign: 'center', color: '#94a3b8', padding: '60px 0', fontSize: 14 }}>Nenhum lead ainda</div>
-      )}
+
+          {/* Histórico de notas */}
+          <div>
+            <div className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Histórico / Notas</div>
+            {historico.length === 0 && (
+              <p className="text-gray-400 text-xs text-center py-3 bg-gray-50 rounded-xl">Nenhuma nota ainda</p>
+            )}
+            <div className="space-y-2 mb-3">
+              {historico.map((h, i) => (
+                <div key={i} className="bg-gray-50 rounded-xl px-3 py-2.5">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs font-bold text-gray-500">{h.autor}</span>
+                    <span className="text-[10px] text-gray-400">{fmtDate(h.ts)}</span>
+                  </div>
+                  <p className="text-sm text-gray-700 leading-relaxed">{h.texto}</p>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input value={nota} onChange={e => setNota(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitNota() } }}
+                placeholder="Adicionar nota..." className="flex-1 px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-indigo-400 bg-white" />
+              <button onClick={submitNota} disabled={!nota.trim() || savingNota}
+                className="px-3 py-2.5 rounded-xl text-white transition disabled:opacity-40"
+                style={{ background: cor }}>
+                {savingNota ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-4 border-t border-gray-100 flex gap-2">
+          <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-sm transition">
+            Fechar
+          </button>
+          <button onClick={saveAndClose} disabled={saving}
+            className="flex-1 py-3 rounded-xl text-white font-bold text-sm transition disabled:opacity-60"
+            style={{ background: stage.color }}>
+            {saving ? 'Salvando...' : 'Salvar'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
 
-export default function CrmPage() {
-  const { slug } = useParams<{ slug: string }>()
-  const [evento, setEvento] = useState<any>(null)
-  const [leads, setLeads] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('')
-  const [selected, setSelected] = useState<any>(null)
-  const [notesText, setNotesText] = useState('')
-  const [saving, setSaving] = useState(false)
-
-  async function load() {
-    if (!slug) return
-    const ev = await getEvento(slug)
-    setEvento(ev)
-    if (ev) setLeads(await getLeads(ev.id))
-    setLoading(false)
-  }
-
-  useEffect(() => { load() }, [slug])
-
-  async function moveStatus(lead: any, status: string, e?: any) {
-    e?.stopPropagation()
-    setLeads(ls => ls.map(l => l.id === lead.id ? { ...l, status } : l))
-    await updateLeadStatus(lead.id, status)
-    if (selected?.id === lead.id) setSelected((s: any) => ({ ...s, status }))
-  }
-
-  async function saveNotes() {
-    if (!selected) return
-    setSaving(true)
-    await updateLeadStatus(selected.id, selected.status, notesText)
-    setLeads(ls => ls.map(l => l.id === selected.id ? { ...l, notas: notesText } : l))
-    setSelected((s: any) => ({ ...s, notas: notesText }))
-    setSaving(false)
-    setSelected(null)
-  }
-
-  function openLead(lead: any) { setSelected(lead); setNotesText(lead.notas || '') }
-
-  if (loading) return (
-    <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f0f5fb' }}>
-      <RefreshCw className="animate-spin text-gray-400" size={28} />
-    </div>
-  )
-
-  if (!evento) return (
-    <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>Evento não encontrado.</div>
-  )
-
-  const cor = evento.cor_primaria || '#2563eb'
-  const crmSenha = evento.crm_senha || import.meta.env.VITE_ADMIN_PASSWORD
-
-  const filtered = leads.filter(l =>
-    !filter ||
-    (l.nome || '').toLowerCase().includes(filter.toLowerCase()) ||
-    (l.whatsapp || '').includes(filter) ||
-    (l.empresa || '').toLowerCase().includes(filter.toLowerCase())
-  )
-
-  const total      = leads.length
-  const novos      = leads.filter(l => l.status === 'novo').length
-  const qualif     = leads.filter(l => l.status === 'qualificado').length
-  const contatados = leads.filter(l => l.status === 'contatado').length
-
+// ── Card do lead ───────────────────────────────────────────────────────────────
+function LeadCard({ lead, onClick }: { lead: Lead; onClick: () => void }) {
   return (
-    <PasswordGate storageKey={`crm-${slug}`} correctPassword={crmSenha} title={`CRM — ${evento.nome_expositor}`}>
-    <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', background: '#f0f5fb', fontFamily: 'DM Sans, sans-serif' }}>
-
-      {/* Topbar */}
-      <div style={{ background: 'white', borderBottom: '1px solid #e2e8f0', padding: '12px 20px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginRight: 'auto' }}>
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: `linear-gradient(135deg,${cor}cc,${cor})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <span style={{ color: 'white', fontWeight: 900, fontSize: 11, fontFamily: 'Sora, sans-serif' }}>{initials(evento.nome_expositor)}</span>
-          </div>
-          <div>
-            <p style={{ color: '#0f172a', fontWeight: 800, fontSize: 15, margin: 0, lineHeight: 1.2, fontFamily: 'Sora, sans-serif' }}>{evento.nome_expositor}</p>
-            <p style={{ color: '#94a3b8', fontSize: 11, margin: 0 }}>{evento.nome_evento}</p>
-          </div>
+    <div onClick={onClick}
+      className="bg-white rounded-2xl p-3.5 shadow-sm border border-gray-100 cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all active:scale-95">
+      <div className="flex items-start gap-2.5 mb-2">
+        <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-black shrink-0"
+          style={{ background: avatarColor(lead.nome) }}>
+          {initials(lead.nome)}
         </div>
-
-        {/* Stats */}
-        <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-          <StatBox label="Total"      value={total}      color="#0f172a" />
-          <StatBox label="Novos"      value={novos}      color="#64748b" />
-          <StatBox label="Contatados" value={contatados} color="#d97706" />
-          <StatBox label="Qualif."    value={qualif}     color="#2563eb" />
+        <div className="flex-1 min-w-0">
+          <div className="font-bold text-gray-900 text-sm truncate">{lead.nome}</div>
+          <div className="text-xs text-gray-400">{fmtPhone(lead.whatsapp)}</div>
         </div>
-
-        {/* Busca + export + refresh */}
-        <div style={{ display: 'flex', gap: 8, width: '100%', maxWidth: 360 }}>
-          <input type="text" value={filter} onChange={e => setFilter(e.target.value)}
-            placeholder="Buscar nome, empresa, telefone..."
-            style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: '1.5px solid #e2e8f0', background: '#f8fafc', color: '#0f172a', fontSize: 13, outline: 'none', fontFamily: 'DM Sans, sans-serif' }} />
-          <button onClick={() => exportToCSV(leads, `${evento?.nome_expositor || 'leads'}.csv`)}
-            style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#2563eb', color: 'white', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            ↓ CSV
-          </button>
-          <button onClick={load}
-            style={{ padding: '8px 12px', borderRadius: 8, border: '1.5px solid #e2e8f0', background: 'white', color: '#64748b', fontSize: 14, cursor: 'pointer' }}>
-            ↻
-          </button>
-        </div>
+        <div className="text-[10px] text-gray-400 shrink-0">{timeAgo(lead.created_at)}</div>
       </div>
 
-      {/* Conteúdo */}
-      {loading ? (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 14 }}>Carregando leads...</div>
-      ) : (
-        <>
-          {/* Mobile: lista por seção */}
-          <div style={{ display: 'block' }} className="md-hide">
-            <MobileList leads={filtered} onOpen={openLead} />
-          </div>
-
-          {/* Desktop: Kanban */}
-          <div style={{ flex: 1, overflowX: 'auto', padding: '20px 16px' }}>
-            <div style={{ display: 'flex', gap: 12, minWidth: 'max-content', height: '100%', alignItems: 'flex-start' }}>
-              {COLUMNS.map(col => {
-                const colLeads = filtered.filter(l => l.status === col.id)
-                return (
-                  <div key={col.id} style={{ width: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRadius: 14, overflow: 'hidden', background: col.bg, border: `1px solid ${col.header}` }}>
-                    <div style={{ padding: '10px 14px', background: col.header, display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: col.color, flexShrink: 0 }} />
-                      <span style={{ fontWeight: 800, fontSize: 12, color: col.color, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'Sora, sans-serif' }}>{col.label}</span>
-                      <span style={{ marginLeft: 'auto', background: 'white', color: col.color, fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 20 }}>{colLeads.length}</span>
-                    </div>
-                    <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 80 }}>
-                      {colLeads.map(lead => (
-                        <KanbanCard key={lead.id} lead={lead} col={col} onMove={moveStatus} onOpen={openLead} />
-                      ))}
-                      {colLeads.length === 0 && (
-                        <div style={{ color: '#cbd5e1', fontSize: 12, textAlign: 'center', padding: '16px 0' }}>Nenhum lead</div>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </>
+      {lead.interesse && (
+        <p className="text-xs text-gray-500 line-clamp-2 mb-2 bg-gray-50 rounded-lg px-2 py-1.5">
+          🎯 {lead.interesse}
+        </p>
       )}
 
-      {/* Modal detalhe */}
-      {selected && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 50 }}
-          onClick={e => e.target === e.currentTarget && setSelected(null)}>
-          <div style={{ background: 'white', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: 520, padding: '28px 24px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 -8px 40px rgba(0,0,0,0.15)' }}>
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {lead.empresa && (
+          <span className="flex items-center gap-1 text-[10px] text-gray-400">
+            <Building2 size={10} /> {lead.empresa}
+          </span>
+        )}
+        {lead.score && (
+          <span className="text-[10px] text-amber-500 font-bold">{'★'.repeat(lead.score)}</span>
+        )}
+        {lead.auto_enviado && (
+          <span className="text-[10px] text-green-500 font-bold ml-auto">✓ WA</span>
+        )}
+        {lead.historico && lead.historico.length > 0 && (
+          <span className="text-[10px] text-indigo-400 font-bold ml-auto">💬 {lead.historico.length}</span>
+        )}
+      </div>
+    </div>
+  )
+}
 
-            {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
-              <div style={{ width: 52, height: 52, borderRadius: '50%', background: avatarColor(selected.nome), display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <span style={{ color: 'white', fontWeight: 800, fontSize: 18, fontFamily: 'Sora, sans-serif' }}>{initials(selected.nome)}</span>
+// ── Página principal ───────────────────────────────────────────────────────────
+export default function CrmPage() {
+  const { slug } = useParams<{ slug: string }>()
+  const [evento, setEvento] = useState<Evento | null>(null)
+  const [leads, setLeads] = useState<Lead[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [filterStage, setFilterStage] = useState('')
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
+  const [sortBy, setSortBy] = useState<'recente' | 'score'>('recente')
+
+  const load = useCallback(async () => {
+    if (!slug) return
+    setLoading(true)
+    const ev = await getEvento(slug)
+    setEvento(ev)
+    if (ev) {
+      const ls = await getLeads(ev.id)
+      setLeads(ls)
+    }
+    setLoading(false)
+  }, [slug])
+
+  useEffect(() => { load() }, [load])
+
+  function updateLeadLocal(updated: Lead) {
+    setLeads(prev => prev.map(l => l.id === updated.id ? updated : l))
+    if (selectedLead?.id === updated.id) setSelectedLead(updated)
+  }
+
+  const filtered = leads
+    .filter(l => {
+      const q = search.toLowerCase()
+      const match = !q || l.nome.toLowerCase().includes(q) ||
+        l.whatsapp.includes(q) || (l.empresa || '').toLowerCase().includes(q) ||
+        (l.interesse || '').toLowerCase().includes(q)
+      const stageMatch = !filterStage || l.status === filterStage
+      return match && stageMatch
+    })
+    .sort((a, b) => {
+      if (sortBy === 'score') return (b.score || 0) - (a.score || 0)
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    })
+
+  const byStage = STAGES.map(s => ({
+    ...s,
+    leads: filtered.filter(l => l.status === s.id),
+    count: leads.filter(l => l.status === s.id).length,
+  }))
+
+  async function handleExport() {
+    if (!evento) return
+    exportToCSV(leads, `leads-${slug}`)
+  }
+
+  const cor = evento?.cor_primaria || '#6366f1'
+
+  if (loading) return (
+    <div className="min-h-svh flex items-center justify-center bg-gray-50">
+      <Loader2 className="animate-spin" size={28} style={{ color: cor }} />
+    </div>
+  )
+
+  return (
+    <PasswordGate storageKey={`crm-auth-${slug}`}
+      correctPassword={evento?.crm_senha || ADMIN_PASSWORD}
+      title={`CRM · ${evento?.nome_expositor || slug}`}>
+      <div className="min-h-svh bg-gray-50 flex flex-col">
+
+        {/* Header */}
+        <div className="bg-white border-b border-gray-100 px-4 py-3 shrink-0">
+          <div className="flex items-center gap-3 mb-3">
+            {evento?.logo_url && (
+              <img src={evento.logo_url} alt="" className="h-8 object-contain" />
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="font-black text-gray-900 text-base truncate">
+                {evento?.nome_expositor}
               </div>
-              <div style={{ flex: 1 }}>
-                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#0f172a', fontFamily: 'Sora, sans-serif' }}>{selected.nome}</h3>
-                <p style={{ margin: '2px 0 0', fontSize: 13, color: '#94a3b8' }}>{new Date(selected.created_at).toLocaleString('pt-BR')}</p>
-              </div>
-              <button onClick={() => setSelected(null)} style={{ width: 36, height: 36, borderRadius: '50%', border: 'none', background: '#f1f5f9', color: '#64748b', fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>×</button>
+              <div className="text-xs text-gray-400">{evento?.nome_evento} · {leads.length} leads</div>
             </div>
-
-            {/* Infos */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
-              <InfoBox label="WhatsApp" value={fmt(selected.whatsapp)} />
-              <InfoBox label="E-mail"   value={selected.email || '—'} />
-              {selected.empresa  && <InfoBox label="Empresa"   value={selected.empresa} />}
-              {selected.interesse && <InfoBox label="Interesse" value={selected.interesse} />}
-            </div>
-
-            {/* Contato rápido */}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-              <a href={whatsappUrl(selected.whatsapp)} target="_blank" rel="noreferrer"
-                style={{ flex: 1, padding: '12px', borderRadius: 12, background: '#22c55e', color: 'white', fontSize: 13, fontWeight: 800, textAlign: 'center', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: 'Sora, sans-serif' }}>
-                <Phone size={15} /> WhatsApp
-              </a>
-              {selected.email && (
-                <a href={`mailto:${selected.email}`}
-                  style={{ flex: 1, padding: '12px', borderRadius: 12, background: '#eff6ff', color: '#2563eb', fontSize: 13, fontWeight: 800, textAlign: 'center', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: 'Sora, sans-serif' }}>
-                  <Mail size={15} /> E-mail
-                </a>
-              )}
-            </div>
-
-            {/* Status */}
-            <div style={{ marginBottom: 16 }}>
-              <p style={{ color: '#64748b', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>Mover para</p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {COLUMNS.map(col => (
-                  <button key={col.id} onClick={() => moveStatus(selected, col.id)}
-                    style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: `2px solid ${col.color}`, transition: 'all 0.15s',
-                      background: selected.status === col.id ? col.color : 'transparent',
-                      color: selected.status === col.id ? 'white' : col.color }}>
-                    {col.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Notas */}
-            <div style={{ marginBottom: 16 }}>
-              <p style={{ color: '#64748b', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>Anotações</p>
-              <textarea value={notesText} onChange={e => setNotesText(e.target.value)}
-                placeholder="Anotações sobre o lead..."
-                rows={3}
-                style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', background: '#f8fafc', color: '#0f172a', fontSize: 14, outline: 'none', resize: 'vertical', fontFamily: 'DM Sans, sans-serif', boxSizing: 'border-box' }} />
-            </div>
-
-            <button onClick={saveNotes} disabled={saving}
-              style={{ width: '100%', padding: '14px', borderRadius: 12, border: 'none', background: cor, color: 'white', fontSize: 14, fontWeight: 800, cursor: 'pointer', opacity: saving ? 0.7 : 1, fontFamily: 'Sora, sans-serif' }}>
-              {saving ? 'Salvando...' : 'Salvar'}
+            <button onClick={load} title="Atualizar"
+              className="p-2 rounded-xl hover:bg-gray-100 transition text-gray-400">
+              <RefreshCw size={16} />
             </button>
+            <a href={`/dashboard/${slug}`}
+              className="p-2 rounded-xl hover:bg-gray-100 transition text-gray-400" title="Analytics">
+              <BarChart2 size={16} />
+            </a>
+            <button onClick={handleExport}
+              className="p-2 rounded-xl hover:bg-gray-100 transition text-gray-400" title="Exportar CSV">
+              <Download size={16} />
+            </button>
+          </div>
 
+          {/* Busca e filtros */}
+          <div className="flex gap-2 flex-wrap">
+            <div className="relative flex-1 min-w-40">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Buscar nome, telefone, empresa..."
+                className="w-full pl-8 pr-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-indigo-400 bg-white" />
+            </div>
+            <select value={filterStage} onChange={e => setFilterStage(e.target.value)}
+              className="px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none bg-white text-gray-600">
+              <option value="">Todos</option>
+              {STAGES.map(s => <option key={s.id} value={s.id}>{s.label} ({leads.filter(l => l.status === s.id).length})</option>)}
+            </select>
+            <select value={sortBy} onChange={e => setSortBy(e.target.value as any)}
+              className="px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none bg-white text-gray-600">
+              <option value="recente">Mais recentes</option>
+              <option value="score">Maior score</option>
+            </select>
+          </div>
+
+          {/* Estatísticas rápidas */}
+          <div className="flex gap-2 mt-3 overflow-x-auto pb-1">
+            {STAGES.map(s => (
+              <button key={s.id} onClick={() => setFilterStage(f => f === s.id ? '' : s.id)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition border"
+                style={{
+                  background: filterStage === s.id ? s.bg : 'transparent',
+                  borderColor: filterStage === s.id ? s.color : '#e5e7eb',
+                  color: filterStage === s.id ? s.color : '#9ca3af',
+                }}>
+                <span style={{ background: s.color, width: 8, height: 8, borderRadius: '50%', display: 'inline-block' }} />
+                {s.short} · {leads.filter(l => l.status === s.id).length}
+              </button>
+            ))}
           </div>
         </div>
-      )}
-    </div>
+
+        {/* Kanban */}
+        <div className="flex-1 overflow-x-auto">
+          <div className="flex gap-3 p-4 min-w-max h-full items-start">
+            {byStage.map(col => (
+              <div key={col.id} className="w-72 shrink-0 flex flex-col gap-2">
+                {/* Cabeçalho da coluna */}
+                <div className="flex items-center gap-2 px-1 mb-1">
+                  <div className="w-2.5 h-2.5 rounded-full" style={{ background: col.color }} />
+                  <span className="font-black text-gray-700 text-sm">{col.label}</span>
+                  <span className="ml-auto text-xs font-bold px-2 py-0.5 rounded-full"
+                    style={{ background: col.pill, color: col.color }}>
+                    {col.leads.length}
+                  </span>
+                </div>
+
+                {/* Cards */}
+                <div className="space-y-2">
+                  {col.leads.map(lead => (
+                    <LeadCard key={lead.id} lead={lead} onClick={() => setSelectedLead(lead)} />
+                  ))}
+                  {col.leads.length === 0 && (
+                    <div className="h-16 rounded-2xl border-2 border-dashed border-gray-200 flex items-center justify-center">
+                      <span className="text-xs text-gray-300 font-medium">Vazio</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Lead Modal */}
+        {selectedLead && (
+          <LeadModal lead={selectedLead} cor={cor}
+            onClose={() => setSelectedLead(null)}
+            onUpdate={updateLeadLocal} />
+        )}
+      </div>
     </PasswordGate>
+  )
+}
+
+// Loader inline pra não duplicar import
+function Loader2({ size, className, style }: any) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24"
+      fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+      className={className} style={style}>
+      <path d="M21 12a9 9 0 11-6.219-8.56" />
+    </svg>
   )
 }
